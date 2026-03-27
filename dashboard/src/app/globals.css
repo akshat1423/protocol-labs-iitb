@@ -63,7 +63,16 @@ body {
 .animate-blink { animation: blink 1s step-end infinite; }
 .animate-hash-scroll { animation: hash-scroll 20s linear infinite; }
 
-/* Scan line disabled */
+/* Kill browser default focus styles */
+input, button, textarea, select {
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-appearance: none;
+}
+input:focus, button:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
 
 /* Grid pattern background */
 .grid-bg {
