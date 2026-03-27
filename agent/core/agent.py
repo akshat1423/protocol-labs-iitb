@@ -139,7 +139,7 @@ class AgentProof:
             self.logger.info("init", "Registering onchain identity...")
             result = await self.erc8004.register(
                 self.identity.agent_name,
-                "ipfs://agent-manifest-placeholder",
+                "https://raw.githubusercontent.com/akshat1423/protocol-labs-iitb/main/agent.json",
             )
             if "error" not in result:
                 self.identity.erc8004_token_id = str(result.get("token_id"))

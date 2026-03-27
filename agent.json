@@ -1,8 +1,8 @@
 {
   "agent_name": "AgentProof-Alpha",
-  "operator_wallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-  "erc8004_identity": "9",
-  "erc8004_registration_tx": "18c73352a46b0fd78732968fce44aa63f58ff83900e5e7186c2b9543893ef00a",
+  "operator_wallet": "0x49313E55937f569C5CAE9e2B37073A37c322E7Ca",
+  "erc8004_identity": "2",
+  "erc8004_registration_tx": "edcba5661b32dc46a26590a3e17944198d81bc83444b9440fb26944b3c498568",
   "supported_tools": [
     "github",
     "code",
