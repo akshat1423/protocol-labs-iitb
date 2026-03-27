@@ -1,0 +1,30 @@
+{
+  "agent_name": "AgentProof-Alpha",
+  "operator_wallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "erc8004_identity": "9",
+  "erc8004_registration_tx": "18c73352a46b0fd78732968fce44aa63f58ff83900e5e7186c2b9543893ef00a",
+  "supported_tools": [
+    "github",
+    "code",
+    "web",
+    "blockchain",
+    "filecoin",
+    "storacha",
+    "identity",
+    "wallet"
+  ],
+  "supported_tech_stacks": [
+    "python",
+    "solidity",
+    "javascript"
+  ],
+  "compute_constraints": {
+    "max_usd": 5.0
+  },
+  "supported_task_categories": [
+    "code_generation",
+    "smart_contract_deployment",
+    "data_analysis",
+    "api_integration"
+  ]
+}
