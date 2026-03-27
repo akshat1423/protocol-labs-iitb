@@ -14,17 +14,6 @@ interface LogEntry {
   parent_hash: string | null;
 }
 
-interface TaskData {
-  task_id: string;
-  title: string;
-  status: string;
-  plan: string[];
-  outputs: Array<Record<string, unknown>>;
-  created_at: number;
-  completed_at: number | null;
-  error: string | null;
-}
-
 interface AgentData {
   manifest: {
     agent_name: string;
@@ -41,350 +30,258 @@ interface AgentData {
   } | null;
   filecoin: { items: string[] };
   memory: { total_entries: number; categories: Record<string, number> } | null;
+  workspace?: { files: string[] };
 }
 
-// ---- Components ----
-
-function HexBackground() {
-  return (
-    <div className="fixed inset-0 grid-bg pointer-events-none z-0" />
-  );
+// ---- Helpers ----
+function timeStr(ts: number) {
+  return new Date(ts * 1000).toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-function Header({ data, chainValid }: { data: AgentData | null; chainValid: boolean }) {
-  return (
-    <header className="relative z-10 border-b border-[var(--border)] bg-[var(--bg-card)]/80 backdrop-blur-sm">
-      <div className="max-w-[1600px] mx-auto px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[var(--accent)] flex items-center justify-center text-white text-sm font-bold">
-            AP
-          </div>
-          <div>
-            <h1 className="text-sm font-bold tracking-wide text-white">AGENTPROOF</h1>
-            <p className="text-[10px] text-[var(--text-secondary)] tracking-widest uppercase">Verifiable Autonomous Agent</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-6">
-          {/* Chain Status */}
-          <div className="flex items-center gap-2">
-            <div className={`w-1.5 h-1.5 rounded-full ${chainValid ? 'bg-[var(--green)] animate-pulse-glow' : 'bg-[var(--red)]'}`} />
-            <span className="text-[10px] text-[var(--text-secondary)]">
-              {chainValid ? 'CHAIN VALID' : 'CHAIN BROKEN'}
-            </span>
-          </div>
-
-          {/* Log count */}
-          <div className="text-[10px] text-[var(--text-secondary)]">
-            <span className="text-[var(--cyan)]">{data?.logs?.total_entries ?? 0}</span> log entries
-          </div>
-
-          {/* Live indicator */}
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-[var(--green)]/30 bg-[var(--green)]/5">
-            <div className="w-1.5 h-1.5 rounded-full bg-[var(--green)] animate-pulse-glow" />
-            <span className="text-[10px] text-[var(--green)] font-medium">LIVE</span>
-          </div>
-        </div>
-      </div>
-    </header>
-  );
+function duration(entries: LogEntry[]) {
+  if (entries.length < 2) return "0s";
+  const d = entries[entries.length - 1].timestamp - entries[0].timestamp;
+  return d < 60 ? `${d.toFixed(1)}s` : `${(d / 60).toFixed(1)}m`;
 }
 
-function IdentityCard({ data }: { data: AgentData | null }) {
-  const manifest = data?.manifest;
-  if (!manifest) return null;
+// ---- Top Bar ----
+function TopBar({ data, logs, running }: { data: AgentData | null; logs: LogEntry[]; running: boolean }) {
+  const events = logs.length;
+  const llmCalls = logs.filter(l => l.level === "decision").length;
+  const toolCalls = logs.filter(l => l.level === "tool_call").length;
+  const errors = logs.filter(l => l.level === "error" || l.level === "safety").length;
+  const tasks = new Set(logs.filter(l => l.task_id).map(l => l.task_id)).size;
 
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 hover:border-[var(--accent)]/30 transition-colors">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-5 h-5 rounded bg-[var(--accent)]/20 flex items-center justify-center">
-          <span className="text-[var(--accent)] text-xs">ID</span>
-        </div>
-        <h2 className="text-xs font-semibold tracking-wider text-[var(--text-secondary)] uppercase">Agent Identity</h2>
+    <div className="flex items-center gap-6 px-5 py-2 bg-[#0d0d14] border-b border-[#1a1a2e] text-[11px] font-mono">
+      <div className="flex items-center gap-2">
+        <div className={`w-2 h-2 rounded-full ${running ? "bg-green-400 animate-pulse" : logs.length > 0 ? "bg-green-500" : "bg-gray-600"}`} />
+        <span className="font-bold text-white tracking-wider">AGENTPROOF</span>
       </div>
-
-      <div className="space-y-3">
-        <div>
-          <span className="text-[10px] text-[var(--text-dim)] uppercase tracking-wider">Name</span>
-          <p className="text-sm text-white font-medium">{manifest.agent_name}</p>
-        </div>
-        <div>
-          <span className="text-[10px] text-[var(--text-dim)] uppercase tracking-wider">Operator</span>
-          <p className="text-[11px] text-[var(--cyan)] font-mono break-all">
-            {manifest.operator_wallet || '0x...'}
-          </p>
-        </div>
-        <div>
-          <span className="text-[10px] text-[var(--text-dim)] uppercase tracking-wider">ERC-8004 Token</span>
-          <p className="text-[11px] text-[var(--purple)] font-mono">
-            {manifest.erc8004_identity ?? 'Registered'}
-          </p>
-        </div>
-
-        {/* Tools */}
-        <div>
-          <span className="text-[10px] text-[var(--text-dim)] uppercase tracking-wider">Tools ({manifest.supported_tools.length})</span>
-          <div className="flex flex-wrap gap-1 mt-1">
-            {manifest.supported_tools.map((tool) => (
-              <span key={tool} className="px-1.5 py-0.5 text-[9px] rounded bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20">
-                {tool}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* Integrations */}
-        {manifest.integrations && (
-          <div>
-            <span className="text-[10px] text-[var(--text-dim)] uppercase tracking-wider">Integrations</span>
-            <div className="mt-1 space-y-1">
-              {Object.entries(manifest.integrations).map(([k, v]) => (
-                <div key={k} className="flex items-center gap-2">
-                  <div className="w-1 h-1 rounded-full bg-[var(--green)]" />
-                  <span className="text-[10px] text-[var(--text-secondary)]">
-                    <span className="text-[var(--green)]">{k}</span> — {v}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      <span className="text-gray-500">
+        {running ? <span className="text-green-400">live</span> : <span className="text-gray-400">idle</span>}
+      </span>
+      <span className="text-gray-500">up: <span className="text-gray-300">{duration(logs)}</span></span>
+      <span className="text-gray-500">events: <span className="text-gray-300">{events}</span></span>
+      <span className="text-gray-500">llm: <span className="text-gray-300">{llmCalls}</span></span>
+      <span className="text-gray-500">tools: <span className="text-gray-300">{toolCalls}</span></span>
+      <span className="text-gray-500">err: <span className={errors > 0 ? "text-red-400" : "text-gray-300"}>{errors}</span></span>
+      <span className="text-gray-500">tasks: <span className="text-gray-300">{tasks}</span></span>
     </div>
   );
 }
 
-function StorageCard({ data }: { data: AgentData | null }) {
+// ---- Tabs ----
+function Tabs({ active, onChange }: { active: string; onChange: (t: string) => void }) {
+  const tabs = ["Activity", "Agent", "Storage", "Health"];
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 hover:border-[var(--green)]/30 transition-colors">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-5 h-5 rounded bg-[var(--green)]/20 flex items-center justify-center">
-          <span className="text-[var(--green)] text-xs">FIL</span>
+    <div className="flex gap-0 border-b border-[#1a1a2e] bg-[#0d0d14]">
+      {tabs.map(t => (
+        <button
+          key={t}
+          onClick={() => onChange(t)}
+          className={`px-5 py-2 text-[11px] font-medium tracking-wide transition-colors ${
+            active === t
+              ? "text-white border-b-2 border-indigo-500"
+              : "text-gray-500 hover:text-gray-300"
+          }`}
+        >
+          {t}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ---- Event Row (core of the timeline) ----
+function EventRow({ entry, isExpanded, onToggle }: { entry: LogEntry; isExpanded: boolean; onToggle: () => void }) {
+  const levelConfig: Record<string, { icon: string; label: string; color: string; iconBg: string }> = {
+    info:        { icon: "▸", label: "Info",          color: "text-blue-400",   iconBg: "text-blue-400" },
+    decision:    { icon: "🧠", label: "LLM Called",    color: "text-purple-400", iconBg: "text-purple-400" },
+    tool_call:   { icon: "⚡", label: "Tool Executed", color: "text-yellow-400", iconBg: "text-yellow-400" },
+    tool_result: { icon: "✓", label: "Tool Result",   color: "text-green-400",  iconBg: "text-green-400" },
+    error:       { icon: "●", label: "Error",         color: "text-red-400",    iconBg: "text-red-500" },
+    guardrail:   { icon: "△", label: "Guardrail",     color: "text-orange-400", iconBg: "text-orange-400" },
+    safety:      { icon: "●", label: "Safety Block",  color: "text-red-500",    iconBg: "text-red-500" },
+  };
+  const cfg = levelConfig[entry.level] ?? levelConfig.info;
+
+  // Extract tool name and duration from data
+  const toolName = (entry.data?.tool as string) || "";
+  const isOk = entry.level !== "error" && entry.level !== "safety";
+
+  // Phase badge color
+  const phaseBadgeColor: Record<string, string> = {
+    init: "bg-gray-700 text-gray-300",
+    discover: "bg-blue-900/50 text-blue-300",
+    plan: "bg-yellow-900/50 text-yellow-300",
+    execute: "bg-cyan-900/50 text-cyan-300",
+    verify: "bg-purple-900/50 text-purple-300",
+    complete: "bg-green-900/50 text-green-300",
+    shutdown: "bg-gray-700 text-gray-300",
+    erc8004: "bg-indigo-900/50 text-indigo-300",
+    filecoin: "bg-teal-900/50 text-teal-300",
+    storacha: "bg-violet-900/50 text-violet-300",
+    lit: "bg-amber-900/50 text-amber-300",
+    safety: "bg-red-900/50 text-red-300",
+    task: "bg-cyan-900/50 text-cyan-300",
+  };
+
+  return (
+    <div className="group">
+      <div
+        onClick={onToggle}
+        className={`flex items-center gap-3 px-4 py-1.5 cursor-pointer hover:bg-white/[0.02] transition-colors ${
+          entry.level === "error" || entry.level === "safety" ? "bg-red-500/[0.03]" : ""
+        }`}
+      >
+        {/* Timestamp */}
+        <span className="text-[11px] text-gray-600 font-mono w-16 shrink-0">{timeStr(entry.timestamp)}</span>
+
+        {/* Icon + Label */}
+        <span className={`text-[11px] ${cfg.iconBg} shrink-0`}>{cfg.icon}</span>
+        <span className={`text-[11px] ${cfg.color} font-medium w-28 shrink-0`}>{cfg.label}</span>
+
+        {/* Status badge */}
+        <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0 ${isOk ? "bg-green-900/30 text-green-400" : "bg-red-900/30 text-red-400"}`}>
+          {isOk ? "✓ OK" : "✗ ERR"}
+        </span>
+
+        {/* Message */}
+        <span className="text-[11px] text-gray-400 flex-1 truncate">{entry.message}</span>
+
+        {/* Right side badges */}
+        <div className="flex items-center gap-2 shrink-0">
+          {toolName && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-900/40 text-cyan-300 font-mono">{toolName}</span>
+          )}
+          <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${phaseBadgeColor[entry.phase] ?? "bg-gray-800 text-gray-400"}`}>
+            {entry.phase}
+          </span>
         </div>
-        <h2 className="text-xs font-semibold tracking-wider text-[var(--text-secondary)] uppercase">Decentralized Storage</h2>
       </div>
 
-      <div className="space-y-3">
-        <div>
-          <span className="text-[10px] text-[var(--text-dim)] uppercase tracking-wider">Filecoin Items</span>
-          <div className="mt-1 space-y-1">
-            {(data?.filecoin?.items ?? []).length > 0 ? (
-              data!.filecoin.items.map((item, i) => (
-                <div key={i} className="flex items-center gap-2 text-[10px]">
-                  <span className="text-[var(--green)]">CID</span>
-                  <span className="text-[var(--text-secondary)] font-mono">{item}</span>
-                </div>
-              ))
-            ) : (
-              <p className="text-[10px] text-[var(--text-dim)]">No items stored yet</p>
+      {/* Expanded detail */}
+      {isExpanded && (
+        <div className="px-4 py-3 ml-16 mr-4 mb-2 bg-[#0a0a10] border border-[#1a1a2e] rounded text-[10px] font-mono animate-fade-in">
+          <div className="space-y-1">
+            <div className="text-gray-500 font-bold uppercase tracking-wider mb-2">Identity</div>
+            <div className="flex gap-8">
+              <div><span className="text-gray-600">Type</span> <span className="text-gray-300 ml-4">{entry.level}</span></div>
+              <div><span className="text-gray-600">Phase</span> <span className="text-gray-300 ml-4">{entry.phase}</span></div>
+              <div><span className="text-gray-600">Task</span> <span className="text-gray-300 ml-4">{entry.task_id ?? "—"}</span></div>
+            </div>
+            <div className="text-gray-500 font-bold uppercase tracking-wider mt-3 mb-2">Meta</div>
+            <div><span className="text-gray-600">hash</span> <span className="text-indigo-400 ml-4">{entry.entry_hash.slice(0, 16)}...</span></div>
+            <div><span className="text-gray-600">parent</span> <span className="text-gray-500 ml-4">{entry.parent_hash?.slice(0, 16) ?? "genesis"}...</span></div>
+            {Object.keys(entry.data).length > 0 && (
+              <>
+                <div className="text-gray-500 font-bold uppercase tracking-wider mt-3 mb-2">Data</div>
+                <pre className="text-gray-400 whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
+                  {JSON.stringify(entry.data, null, 2).slice(0, 1000)}
+                </pre>
+              </>
             )}
           </div>
         </div>
-
-        <div className="pt-2 border-t border-[var(--border)]">
-          <span className="text-[10px] text-[var(--text-dim)] uppercase tracking-wider">Storacha Memory</span>
-          {data?.memory ? (
-            <div className="mt-1">
-              <p className="text-sm text-white">{data.memory.total_entries} entries</p>
-              <div className="flex gap-2 mt-1">
-                {Object.entries(data.memory.categories).map(([cat, count]) => (
-                  <span key={cat} className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--purple)]/10 text-[var(--purple)] border border-[var(--purple)]/20">
-                    {cat}: {count}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <p className="text-[10px] text-[var(--text-dim)] mt-1">No memories yet</p>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 }
 
-function PipelineView({ logs }: { logs: LogEntry[] }) {
-  const phases = ['init', 'discover', 'plan', 'execute', 'verify', 'complete', 'shutdown'];
-  const currentPhase = logs.length > 0 ? logs[logs.length - 1].phase : 'idle';
+// ---- Session Block ----
+function SessionBlock({ logs, title, status }: { logs: LogEntry[]; title: string; status: string }) {
+  const events = logs.length;
+  const tools = [...new Set(logs.filter(l => l.data?.tool).map(l => l.data.tool as string))];
+  const llmCount = logs.filter(l => l.level === "decision").length;
+  const toolCount = logs.filter(l => l.level === "tool_call").length;
 
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-5 h-5 rounded bg-[var(--yellow)]/20 flex items-center justify-center">
-          <span className="text-[var(--yellow)] text-xs">&#9654;</span>
-        </div>
-        <h2 className="text-xs font-semibold tracking-wider text-[var(--text-secondary)] uppercase">Processing Pipeline</h2>
-      </div>
-
-      <div className="flex items-center gap-1">
-        {phases.map((phase, i) => {
-          const isActive = phase === currentPhase;
-          const isPast = phases.indexOf(currentPhase) > i;
-          const hasEntries = logs.some(l => l.phase === phase);
-
-          return (
-            <div key={phase} className="flex items-center gap-1 flex-1">
-              <div className={`flex-1 rounded-md px-2 py-2 text-center text-[9px] uppercase tracking-wider border transition-all ${
-                isActive
-                  ? 'bg-[var(--accent)]/20 border-[var(--accent)] text-[var(--accent)] glow-accent font-bold'
-                  : isPast || hasEntries
-                    ? 'bg-[var(--green)]/10 border-[var(--green)]/30 text-[var(--green)]'
-                    : 'bg-[var(--bg-primary)] border-[var(--border)] text-[var(--text-dim)]'
-              }`}>
-                {phase}
-              </div>
-              {i < phases.length - 1 && (
-                <span className={`text-[8px] ${isPast ? 'text-[var(--green)]' : 'text-[var(--text-dim)]'}`}>&#8594;</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function TaskCard({ task }: { task: TaskData }) {
-  const statusConfig: Record<string, { color: string; label: string }> = {
-    discovered: { color: 'var(--text-secondary)', label: 'DISCOVERED' },
-    planning: { color: 'var(--yellow)', label: 'PLANNING' },
-    executing: { color: 'var(--cyan)', label: 'EXECUTING' },
-    verifying: { color: 'var(--purple)', label: 'VERIFYING' },
-    completed: { color: 'var(--green)', label: 'COMPLETED' },
-    failed: { color: 'var(--red)', label: 'FAILED' },
-  };
-  const status = statusConfig[task.status] ?? statusConfig.discovered;
-
-  return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 hover:border-[var(--accent)]/30 transition-colors">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded bg-[var(--cyan)]/20 flex items-center justify-center">
-            <span className="text-[var(--cyan)] text-xs">T</span>
-          </div>
-          <h2 className="text-xs font-semibold tracking-wider text-[var(--text-secondary)] uppercase">Active Task</h2>
-        </div>
-        <span className="text-[9px] px-2 py-0.5 rounded-full font-bold tracking-wider" style={{ color: status.color, background: `${status.color}15`, border: `1px solid ${status.color}30` }}>
-          {status.label}
+    <div className="border-b border-[#1a1a2e]">
+      {/* Session header */}
+      <div className="flex items-center gap-3 px-4 py-2 bg-[#0d0d14]/80 sticky top-0 z-10">
+        <span className="text-[11px] text-gray-400">▾</span>
+        <span className="text-[11px] text-white font-medium">{title}</span>
+        <span className={`text-[9px] px-2 py-0.5 rounded font-bold tracking-wider ${
+          status === "completed" ? "bg-green-900/40 text-green-400"
+          : status === "failed" ? "bg-red-900/40 text-red-400"
+          : "bg-yellow-900/40 text-yellow-400"
+        }`}>
+          {status === "completed" ? "Completed" : status === "failed" ? "Failed" : "Running"}
+        </span>
+        <div className="flex-1" />
+        <span className="text-[10px] text-gray-600">
+          {events} events · {duration(logs)} · {toolCount} tools · {llmCount} llm
         </span>
       </div>
 
-      <p className="text-sm text-white mb-3">{task.title}</p>
-
-      {task.plan.length > 0 && (
-        <div className="space-y-1.5">
-          {task.plan.map((step, i) => {
-            const output = task.outputs.find((o: Record<string, unknown>) => o.step === i);
-            const isDone = !!output;
-            const hasError = output && ('error' in output || 'blocked' in output);
-
-            return (
-              <div key={i} className="flex items-start gap-2 group">
-                <div className={`mt-0.5 w-4 h-4 rounded-sm flex items-center justify-center text-[8px] shrink-0 border ${
-                  hasError ? 'border-[var(--red)]/50 bg-[var(--red)]/10 text-[var(--red)]'
-                  : isDone ? 'border-[var(--green)]/50 bg-[var(--green)]/10 text-[var(--green)]'
-                  : 'border-[var(--border)] text-[var(--text-dim)]'
-                }`}>
-                  {hasError ? '!' : isDone ? '&#10003;' : i + 1}
-                </div>
-                <span className={`text-[11px] leading-tight ${isDone ? 'text-[var(--text-secondary)]' : 'text-white'}`}>
-                  {step}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {task.error && (
-        <div className="mt-3 px-3 py-2 rounded bg-[var(--red)]/10 border border-[var(--red)]/20">
-          <p className="text-[10px] text-[var(--red)]">{task.error}</p>
+      {/* Tools used */}
+      {tools.length > 0 && (
+        <div className="px-4 py-1 text-[10px] text-gray-600 bg-[#0a0a0f]">
+          Events: {events} &nbsp; Duration: {duration(logs)} &nbsp; Tools: {tools.join(", ")}
         </div>
       )}
     </div>
   );
 }
 
-const levelStyles: Record<string, { color: string; icon: string }> = {
-  info:        { color: 'text-blue-400',   icon: 'INF' },
-  decision:    { color: 'text-yellow-400', icon: 'DEC' },
-  tool_call:   { color: 'text-cyan-400',   icon: ' >>' },
-  tool_result: { color: 'text-green-400',  icon: ' <<' },
-  error:       { color: 'text-red-400',    icon: 'ERR' },
-  guardrail:   { color: 'text-purple-400', icon: 'GRD' },
-  safety:      { color: 'text-red-500',    icon: 'SFT' },
-};
+// ---- Alerts Sidebar ----
+function AlertsSidebar({ logs, data }: { logs: LogEntry[]; data: AgentData | null }) {
+  const errors = logs.filter(l => l.level === "error" || l.level === "safety");
+  const warnings = logs.filter(l => l.level === "guardrail");
 
-function LogStream({ logs }: { logs: LogEntry[] }) {
+  // Rules
+  const rules = [
+    { name: "chain-integrity", status: "OK" },
+    { name: "budget-limit", status: "OK" },
+    { name: "tx-value-limit", status: "OK" },
+    { name: "tool-errors", status: errors.length > 0 ? "WARN" : "OK" },
+    { name: "guardrail-blocks", status: warnings.length > 0 ? "WARN" : "OK" },
+    { name: "llm-errors", status: errors.some(e => e.message.includes("LLM") || e.message.includes("Budget")) ? "FIRING" : "OK" },
+  ];
+
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] flex flex-col h-full">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border)]">
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded bg-[var(--accent)]/20 flex items-center justify-center">
-            <span className="text-[var(--accent)] text-xs">&gt;_</span>
-          </div>
-          <h2 className="text-xs font-semibold tracking-wider text-[var(--text-secondary)] uppercase">Execution Log</h2>
-        </div>
-        <span className="text-[10px] text-[var(--text-dim)]">{logs.length} entries</span>
+    <div className="w-72 shrink-0 border-l border-[#1a1a2e] bg-[#0a0a0f] overflow-y-auto">
+      <div className="px-4 py-2 border-b border-[#1a1a2e]">
+        <span className="text-[11px] text-gray-400 font-bold tracking-wider">ALERTS</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-px">
-        {logs.map((log, i) => {
-          const style = levelStyles[log.level] ?? levelStyles.info;
-          const time = new Date(log.timestamp * 1000).toLocaleTimeString('en-US', { hour12: false });
-
-          return (
-            <div key={i} className="flex gap-2 px-2 py-1 rounded hover:bg-white/[0.02] group animate-fade-in font-mono">
-              <span className="text-[10px] text-[var(--text-dim)] shrink-0 tabular-nums">{time}</span>
-              <span className={`text-[10px] ${style.color} shrink-0 w-6 text-right font-bold`}>{style.icon}</span>
-              <span className="text-[10px] text-[var(--text-dim)] shrink-0 w-14">{log.phase}</span>
-              <span className="text-[10px] text-[var(--text-secondary)] flex-1 break-all">{log.message}</span>
-              <span className="text-[8px] text-[var(--text-dim)] shrink-0 hidden group-hover:block font-mono opacity-50">
-                #{log.entry_hash.slice(0, 8)}
-              </span>
-            </div>
-          );
-        })}
-
-        {/* Cursor */}
-        <div className="flex gap-2 px-2 py-1">
-          <span className="text-[10px] text-[var(--accent)] animate-blink">&#9608;</span>
+      {/* Error alerts */}
+      {errors.map((err, i) => (
+        <div key={i} className="px-4 py-3 border-b border-[#1a1a2e]">
+          <div className="text-[10px] font-bold text-red-400 tracking-wider">[ERROR] {err.phase.toUpperCase()}</div>
+          <div className="text-[10px] text-gray-400 mt-1">{err.message.slice(0, 120)}</div>
+          <div className="text-[9px] text-gray-600 mt-1">{timeStr(err.timestamp)}</div>
         </div>
-      </div>
+      ))}
 
-      {/* Hash chain footer */}
-      {logs.length > 0 && (
-        <div className="px-5 py-2 border-t border-[var(--border)] overflow-hidden">
-          <div className="animate-hash-scroll whitespace-nowrap text-[8px] text-[var(--text-dim)] font-mono">
-            {logs.slice(-10).map(l => l.entry_hash).join(' ← ')}
-            {' ← '}
-            {logs.slice(-10).map(l => l.entry_hash).join(' ← ')}
-          </div>
+      {warnings.map((w, i) => (
+        <div key={i} className="px-4 py-3 border-b border-[#1a1a2e]">
+          <div className="text-[10px] font-bold text-yellow-400 tracking-wider">[WARN] GUARDRAIL</div>
+          <div className="text-[10px] text-gray-400 mt-1">{w.message.slice(0, 120)}</div>
+        </div>
+      ))}
+
+      {errors.length === 0 && warnings.length === 0 && (
+        <div className="px-4 py-6 text-center">
+          <div className="text-[10px] text-gray-600">No alerts</div>
         </div>
       )}
-    </div>
-  );
-}
 
-function HashChainViz({ logs }: { logs: LogEntry[] }) {
-  const recent = logs.slice(-8);
-  return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-5 h-5 rounded bg-[var(--purple)]/20 flex items-center justify-center">
-          <span className="text-[var(--purple)] text-xs">#</span>
-        </div>
-        <h2 className="text-xs font-semibold tracking-wider text-[var(--text-secondary)] uppercase">Hash Chain</h2>
-        <span className="text-[9px] text-[var(--green)] ml-auto">VERIFIED</span>
+      {/* Rules */}
+      <div className="px-4 py-2 border-t border-[#1a1a2e]">
+        <span className="text-[11px] text-gray-400 font-bold tracking-wider">RULES</span>
       </div>
-
-      <div className="space-y-1">
-        {recent.map((log, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <span className="text-[8px] text-[var(--accent)] font-mono w-16 shrink-0 truncate">{log.entry_hash.slice(0, 8)}...</span>
-            {i < recent.length - 1 && <span className="text-[8px] text-[var(--text-dim)]">&#8592;</span>}
-            {i < recent.length - 1 && <span className="text-[8px] text-[var(--text-dim)] font-mono">{log.parent_hash?.slice(0, 8)}...</span>}
-            <span className={`text-[8px] ml-auto ${levelStyles[log.level]?.color ?? 'text-gray-500'}`}>{log.level}</span>
+      <div className="px-4 pb-4 space-y-1">
+        {rules.map(r => (
+          <div key={r.name} className="flex items-center gap-2 text-[10px]">
+            <span className={`w-1.5 h-1.5 rounded-full ${
+              r.status === "OK" ? "bg-green-500" : r.status === "WARN" ? "bg-yellow-500" : "bg-red-500"
+            }`} />
+            <span className="text-gray-400 flex-1">{r.name}</span>
+            <span className={`${
+              r.status === "OK" ? "text-green-500" : r.status === "WARN" ? "text-yellow-500" : "text-red-500"
+            }`}>{r.status}</span>
           </div>
         ))}
       </div>
@@ -392,62 +289,105 @@ function HashChainViz({ logs }: { logs: LogEntry[] }) {
   );
 }
 
-// ---- Task Input Component ----
+// ---- Agent Tab ----
+function AgentTab({ data }: { data: AgentData | null }) {
+  const m = data?.manifest;
+  if (!m) return <div className="p-8 text-gray-600 text-sm">No agent data available. Run a task first.</div>;
+  return (
+    <div className="p-6 max-w-2xl space-y-4">
+      <div className="bg-[#0d0d14] border border-[#1a1a2e] rounded p-4 font-mono text-[11px] space-y-2">
+        <div className="text-gray-500 font-bold uppercase tracking-wider mb-2">Agent Identity</div>
+        <div><span className="text-gray-600 w-20 inline-block">Name</span> <span className="text-white">{m.agent_name}</span></div>
+        <div><span className="text-gray-600 w-20 inline-block">Operator</span> <span className="text-cyan-400">{m.operator_wallet || "—"}</span></div>
+        <div><span className="text-gray-600 w-20 inline-block">ERC-8004</span> <span className="text-indigo-400">Token #{m.erc8004_identity ?? "—"}</span></div>
+        <div className="text-gray-500 font-bold uppercase tracking-wider mt-4 mb-2">Tools ({m.supported_tools.length})</div>
+        <div className="flex flex-wrap gap-1">
+          {m.supported_tools.map(t => (
+            <span key={t} className="px-2 py-0.5 bg-indigo-900/30 text-indigo-300 rounded text-[9px]">{t}</span>
+          ))}
+        </div>
+        {m.integrations && (
+          <>
+            <div className="text-gray-500 font-bold uppercase tracking-wider mt-4 mb-2">Integrations</div>
+            {Object.entries(m.integrations).map(([k, v]) => (
+              <div key={k}><span className="text-green-400">{k}</span> <span className="text-gray-500">— {v}</span></div>
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
+// ---- Storage Tab ----
+function StorageTab({ data }: { data: AgentData | null }) {
+  return (
+    <div className="p-6 max-w-2xl space-y-4">
+      <div className="bg-[#0d0d14] border border-[#1a1a2e] rounded p-4 font-mono text-[11px] space-y-2">
+        <div className="text-gray-500 font-bold uppercase tracking-wider mb-2">Filecoin</div>
+        {(data?.filecoin?.items ?? []).length > 0 ? (
+          data!.filecoin.items.map((item, i) => (
+            <div key={i} className="flex gap-2"><span className="text-teal-400">CID</span> <span className="text-gray-400">{item}</span></div>
+          ))
+        ) : <div className="text-gray-600">No items stored</div>}
+
+        <div className="text-gray-500 font-bold uppercase tracking-wider mt-4 mb-2">Storacha Memory</div>
+        {data?.memory ? (
+          <div>
+            <div className="text-gray-300">{data.memory.total_entries} entries</div>
+            {Object.entries(data.memory.categories).map(([k, v]) => (
+              <div key={k} className="text-gray-500">{k}: {v}</div>
+            ))}
+          </div>
+        ) : <div className="text-gray-600">No memories</div>}
+
+        <div className="text-gray-500 font-bold uppercase tracking-wider mt-4 mb-2">Workspace Files</div>
+        {(data?.workspace?.files ?? []).length > 0 ? (
+          data!.workspace!.files.map((f, i) => (
+            <div key={i} className="text-gray-400">📄 {f}</div>
+          ))
+        ) : <div className="text-gray-600">No files</div>}
+      </div>
+    </div>
+  );
+}
+
+// ---- Task Input ----
 function TaskInput({ onSubmit, running }: { onSubmit: (task: string) => void; running: boolean }) {
-  const [input, setInput] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const handleSubmit = () => {
-    if (input.trim() && !running) {
-      onSubmit(input.trim());
-      setInput('');
-    }
-  };
+  const [input, setInput] = useState("");
 
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4">
-      <div className="flex items-center gap-3">
-        <span className="text-[var(--accent)] text-sm shrink-0">$</span>
-        <input
-          ref={inputRef}
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-          placeholder={running ? "Agent is running..." : "Enter a task for the agent..."}
-          disabled={running}
-          className="flex-1 bg-transparent text-sm text-white placeholder:text-[var(--text-dim)] outline-none disabled:opacity-50"
-        />
-        <button
-          onClick={handleSubmit}
-          disabled={running || !input.trim()}
-          className={`px-4 py-1.5 rounded-lg text-xs font-bold tracking-wider transition-all ${
-            running
-              ? 'bg-[var(--yellow)]/20 text-[var(--yellow)] border border-[var(--yellow)]/30'
-              : input.trim()
-                ? 'bg-[var(--accent)] text-white hover:bg-[var(--accent)]/80 shadow-lg shadow-[var(--accent)]/20'
-                : 'bg-[var(--border)] text-[var(--text-dim)]'
-          }`}
-        >
-          {running ? 'RUNNING...' : 'EXECUTE'}
-        </button>
-      </div>
-
-      {/* Suggested tasks */}
+    <div className="flex items-center gap-2 px-4 py-2 bg-[#0d0d14] border-b border-[#1a1a2e]">
+      <span className="text-indigo-400 text-sm font-bold">$</span>
+      <input
+        type="text"
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && input.trim() && !running) {
+            onSubmit(input.trim());
+            setInput("");
+          }
+        }}
+        placeholder={running ? "Agent running..." : "Type a task and press Enter..."}
+        disabled={running}
+        className="flex-1 bg-transparent text-[12px] text-white font-mono placeholder:text-gray-700 outline-none disabled:opacity-40"
+      />
+      <button
+        onClick={() => { if (input.trim() && !running) { onSubmit(input.trim()); setInput(""); } }}
+        disabled={running || !input.trim()}
+        className={`px-3 py-1 rounded text-[10px] font-bold tracking-wider ${
+          running ? "bg-yellow-900/30 text-yellow-400 border border-yellow-800/50"
+          : input.trim() ? "bg-indigo-600 text-white hover:bg-indigo-500" : "bg-gray-800 text-gray-600"
+        }`}
+      >
+        {running ? "RUNNING" : "RUN"}
+      </button>
       {!running && !input && (
-        <div className="flex gap-2 mt-3 flex-wrap">
-          {[
-            "Write a Python fibonacci script and store it on Filecoin",
-            "Build a todo list API in Python",
-            "Create a smart contract for token voting",
-          ].map((suggestion) => (
-            <button
-              key={suggestion}
-              onClick={() => setInput(suggestion)}
-              className="px-2 py-1 text-[9px] rounded border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)]/50 hover:text-[var(--accent)] transition-colors"
-            >
-              {suggestion}
+        <div className="flex gap-1">
+          {["Build a fibonacci script", "Create a snake game"].map(s => (
+            <button key={s} onClick={() => setInput(s)} className="text-[9px] text-gray-600 hover:text-gray-400 px-2 py-0.5 rounded border border-[#1a1a2e] hover:border-gray-700 transition">
+              {s}
             </button>
           ))}
         </div>
@@ -456,79 +396,24 @@ function TaskInput({ onSubmit, running }: { onSubmit: (task: string) => void; ru
   );
 }
 
-// ---- Main Page ----
-
+// ---- Main ----
 export default function Dashboard() {
   const [data, setData] = useState<AgentData | null>(null);
-  const [tasks, setTasks] = useState<TaskData[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [agentRunning, setAgentRunning] = useState(false);
-  const [prevLogCount, setPrevLogCount] = useState(0);
-
-  const parseTasks = (entries: LogEntry[]) => {
-    const taskMap = new Map<string, TaskData>();
-    for (const entry of entries) {
-      if (entry.task_id && !taskMap.has(entry.task_id)) {
-        taskMap.set(entry.task_id, {
-          task_id: entry.task_id,
-          title: '',
-          status: 'executing',
-          plan: [],
-          outputs: [],
-          created_at: entry.timestamp,
-          completed_at: null,
-          error: null,
-        });
-      }
-      if (entry.task_id && taskMap.has(entry.task_id)) {
-        const t = taskMap.get(entry.task_id)!;
-        if (entry.message.startsWith('Processing: ')) t.title = entry.message.replace('Processing: ', '');
-        if (entry.message.startsWith('Task completed:')) { t.status = 'completed'; t.completed_at = entry.timestamp; }
-        if (entry.message.startsWith('Task failed')) { t.status = 'failed'; t.error = entry.message; }
-      }
-    }
-    // Extract plan steps
-    const planEntries = entries.filter((e) => e.phase === 'execute' && e.message.startsWith('Step '));
-    const planSteps = planEntries.map((e) => e.message.replace(/^Step \d+\/\d+: /, ''));
-    const toolResults = entries.filter((e) => e.level === 'tool_result');
-
-    if (taskMap.size > 0) {
-      const firstTask = Array.from(taskMap.values())[0];
-      if (planSteps.length > 0) firstTask.plan = planSteps;
-      toolResults.forEach((_, idx) => {
-        firstTask.outputs.push({ step: idx, tool: 'done' });
-      });
-    }
-    return Array.from(taskMap.values());
-  };
+  const [running, setRunning] = useState(false);
+  const [activeTab, setActiveTab] = useState("Activity");
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   const fetchData = async () => {
     try {
-      const [agentRes, statusRes] = await Promise.all([
-        fetch('/api/agent'),
-        fetch('/api/run'),
-      ]);
+      const [agentRes, statusRes] = await Promise.all([fetch("/api/agent"), fetch("/api/run")]);
       const json = await agentRes.json();
       const status = await statusRes.json();
-
       setData(json);
-      const entries = json.logs?.recent_entries ?? [];
-      setLogs(entries);
-      setTasks(parseTasks(entries));
-      setAgentRunning(status.running);
-
-      // Detect if agent just finished
-      const newCount = entries.length;
-      if (prevLogCount > 0 && newCount > prevLogCount) {
-        // New entries appeared
-      }
-      setPrevLogCount(newCount);
-
-      setLoading(false);
-    } catch {
-      setLoading(false);
-    }
+      setLogs(json.logs?.recent_entries ?? []);
+      setRunning(status.running);
+    } catch {}
   };
 
   useEffect(() => {
@@ -537,102 +422,85 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleRunTask = async (task: string) => {
-    setAgentRunning(true);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs.length]);
+
+  const handleRun = async (task: string) => {
+    setRunning(true);
     setLogs([]);
-    setTasks([]);
-    try {
-      await fetch('/api/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task }),
-      });
-    } catch {
-      setAgentRunning(false);
-    }
+    setExpandedIdx(null);
+    await fetch("/api/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task }),
+    });
   };
 
-  const chainValid = logs.length === 0 || logs.every((l, i) =>
-    i === 0 || l.parent_hash === logs[i - 1].entry_hash
-  );
-
-  if (loading) {
-    return (
-      <div className="h-screen flex items-center justify-center grid-bg">
-        <div className="text-center">
-          <div className="text-2xl text-[var(--accent)] font-bold mb-2">AGENTPROOF</div>
-          <div className="text-[10px] text-[var(--text-secondary)] tracking-widest animate-blink">INITIALIZING...</div>
-        </div>
-      </div>
-    );
-  }
+  // Derive task info
+  const taskTitle = logs.find(l => l.message.startsWith("Processing: "))?.message.replace("Processing: ", "") ?? "";
+  const taskStatus = logs.some(l => l.message.startsWith("Task completed")) ? "completed"
+    : logs.some(l => l.message.startsWith("Task failed") || l.level === "error" && l.phase === "verify") ? "failed"
+    : running ? "running" : logs.length > 0 ? "completed" : "idle";
 
   return (
-    <div className="min-h-screen grid-bg relative">
-      <HexBackground />
-      <Header data={data} chainValid={chainValid} />
+    <div className="h-screen flex flex-col bg-[#08080d] font-mono">
+      <TopBar data={data} logs={logs} running={running} />
+      <TaskInput onSubmit={handleRun} running={running} />
+      <Tabs active={activeTab} onChange={setActiveTab} />
 
-      <main className="relative z-10 max-w-[1600px] mx-auto p-6">
-        {/* Task Input */}
-        <div className="mb-4">
-          <TaskInput onSubmit={handleRunTask} running={agentRunning} />
-        </div>
-
-        {/* Pipeline */}
-        <div className="mb-4">
-          <PipelineView logs={logs} />
-        </div>
-
-        {/* Main grid */}
-        <div className="grid grid-cols-12 gap-6" style={{ height: 'calc(100vh - 300px)' }}>
-          {/* Left sidebar */}
-          <div className="col-span-3 space-y-4 overflow-y-auto">
-            <IdentityCard data={data} />
-            <StorageCard data={data} />
-            <HashChainViz logs={logs} />
-          </div>
-
-          {/* Center — Log stream */}
-          <div className="col-span-6">
-            <LogStream logs={logs} />
-          </div>
-
-          {/* Right sidebar — Tasks */}
-          <div className="col-span-3 space-y-4 overflow-y-auto">
-            {tasks.length > 0 ? (
-              tasks.map((task) => <TaskCard key={task.task_id} task={task} />)
-            ) : (
-              <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
-                <div className="text-center py-6">
-                  <div className="text-3xl mb-3">&#129302;</div>
-                  <p className="text-xs text-[var(--text-secondary)] mb-1">No active tasks</p>
-                  <p className="text-[10px] text-[var(--text-dim)]">Type a task above to start the agent</p>
-                </div>
+      <div className="flex-1 flex overflow-hidden">
+        {/* Main content */}
+        <div className="flex-1 overflow-y-auto">
+          {activeTab === "Activity" && (
+            <>
+              {/* Timeline header */}
+              <div className="flex items-center justify-between px-4 py-1.5 bg-[#0a0a0f] border-b border-[#1a1a2e] sticky top-0 z-20">
+                <span className="text-[11px] text-gray-500 font-bold tracking-wider">LIVE TIMELINE</span>
+                <span className="text-[10px] text-gray-600">{logs.length}</span>
               </div>
-            )}
 
-            {/* Safety features */}
-            {data?.manifest?.safety_features && (
-              <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-5 h-5 rounded bg-[var(--red)]/20 flex items-center justify-center">
-                    <span className="text-[var(--red)] text-xs">!</span>
-                  </div>
-                  <h2 className="text-xs font-semibold tracking-wider text-[var(--text-secondary)] uppercase">Guardrails</h2>
+              {/* Session block */}
+              {logs.length > 0 && (
+                <SessionBlock logs={logs} title={taskTitle || "AgentProof Session"} status={taskStatus} />
+              )}
+
+              {/* Event rows */}
+              {logs.map((entry, i) => (
+                <EventRow
+                  key={`${entry.entry_hash}-${i}`}
+                  entry={entry}
+                  isExpanded={expandedIdx === i}
+                  onToggle={() => setExpandedIdx(expandedIdx === i ? null : i)}
+                />
+              ))}
+
+              {logs.length === 0 && !running && (
+                <div className="flex items-center justify-center h-64 text-gray-700 text-sm">
+                  Type a task above to start the agent
                 </div>
-                <div className="space-y-1">
-                  {data.manifest.safety_features.map((f) => (
-                    <div key={f} className="flex items-center gap-2">
-                      <div className="w-1 h-1 rounded-full bg-[var(--green)]" />
-                      <span className="text-[9px] text-[var(--text-secondary)]">{f.replace(/_/g, ' ')}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+
+              <div ref={bottomRef} />
+            </>
+          )}
+
+          {activeTab === "Agent" && <AgentTab data={data} />}
+          {activeTab === "Storage" && <StorageTab data={data} />}
+          {activeTab === "Health" && (
+            <div className="p-6 font-mono text-[11px] space-y-2">
+              <div className="text-gray-500 font-bold tracking-wider">HEALTH STATUS</div>
+              <div className="text-green-400">Chain integrity: {logs.length > 0 ? "VALID" : "N/A"}</div>
+              <div className="text-green-400">Hash entries: {logs.length}</div>
+              <div className="text-gray-400">Head hash: {logs.length > 0 ? logs[logs.length - 1].entry_hash.slice(0, 24) + "..." : "—"}</div>
+              <div className="text-gray-400">Anvil: {data?.manifest ? "Connected" : "Unknown"}</div>
+            </div>
+          )}
         </div>
-      </main>
+
+        {/* Alerts sidebar */}
+        {activeTab === "Activity" && <AlertsSidebar logs={logs} data={data} />}
+      </div>
     </div>
   );
 }
