@@ -9,9 +9,20 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any
+
+# Ensure the agent directory is on the path so `core.*` imports work on Railway
+sys.path.insert(0, str(Path(__file__).parent))
+
+# Load .env if present (local dev)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env")
+except Exception:
+    pass
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
