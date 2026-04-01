@@ -9,8 +9,12 @@ from typing import Any
 
 import httpx
 
-from ..core.config import config
-from ..core.logger import ExecutionLogger
+try:
+    from ..core.config import config
+    from ..core.logger import ExecutionLogger
+except ImportError:
+    from core.config import config  # type: ignore
+    from core.logger import ExecutionLogger  # type: ignore
 
 
 class FilecoinStorage:

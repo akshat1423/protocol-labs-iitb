@@ -1,0 +1,31 @@
+{
+  "agent_name": "FullAgent",
+  "operator_wallet": "0x49313E55937f569C5CAE9e2B37073A37c322E7Ca",
+  "erc8004_identity": "32",
+  "erc8004_registration_tx": "d921573077b9b0bfd3c23400ce19a4ddd3b33a96f66141503a3a9184c851c00e",
+  "supported_tools": [
+    "github",
+    "code",
+    "web",
+    "blockchain",
+    "filecoin",
+    "storacha",
+    "identity",
+    "wallet"
+  ],
+  "supported_tech_stacks": [
+    "python",
+    "solidity",
+    "javascript"
+  ],
+  "compute_constraints": {
+    "max_usd": 5.0
+  },
+  "supported_task_categories": [
+    "code_generation",
+    "smart_contract_deployment",
+    "data_analysis",
+    "api_integration"
+  ],
+  "agent_id": "full_agent"
+}

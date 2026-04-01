@@ -168,15 +168,21 @@ async def _run_agent_task(task: str):
                 else:
                     path.unlink(missing_ok=True)
 
-        # Import and run agent
-        from core.runner import build_agent_for_task
-        from core.agents import get_all_specs
-        import json as _json
-
-        Path("agent_registry.json").write_text(_json.dumps(get_all_specs(), indent=2))
-
-        agent, spec = build_agent_for_task(task)
-        await agent.run(initial_task=task)
+        # Run agent as subprocess to avoid relative import issues
+        agent_dir = Path(__file__).parent
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, str(agent_dir / "run_task.py"), task,
+            cwd=str(agent_dir),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        # Stream output to our stdout so Railway logs show agent output
+        assert proc.stdout is not None
+        async for line in proc.stdout:
+            print(line.decode(errors="replace"), end="", flush=True)
+        await proc.wait()
+        if proc.returncode != 0:
+            print(f"Agent subprocess exited with code {proc.returncode}")
     except Exception as e:
         print(f"Agent error: {e}")
     finally:

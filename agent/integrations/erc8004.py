@@ -9,8 +9,12 @@ from typing import Any
 from web3 import Web3
 from web3.middleware import ExtraDataToPOAMiddleware
 
-from ..core.config import config
-from ..core.logger import ExecutionLogger
+try:
+    from ..core.config import config
+    from ..core.logger import ExecutionLogger
+except ImportError:
+    from core.config import config  # type: ignore
+    from core.logger import ExecutionLogger  # type: ignore
 
 # Minimal ABI for AgentRegistry interactions
 REGISTRY_ABI = [

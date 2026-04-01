@@ -9,15 +9,24 @@ from .agents import route_task, get_all_specs, AgentSpec
 from .config import config
 from .server import DashboardServer
 
-from ..integrations.erc8004 import ERC8004Identity
-from ..integrations.filecoin_storage import FilecoinStorage
-from ..integrations.storacha_memory import StorachaMemory
-from ..integrations.lit_wallet import LitWallet
-
-from ..tools.github_tool import GitHubTool
-from ..tools.code_tool import CodeTool
-from ..tools.web_tool import WebTool
-from ..tools.blockchain_tool import BlockchainTool
+try:
+    from ..integrations.erc8004 import ERC8004Identity
+    from ..integrations.filecoin_storage import FilecoinStorage
+    from ..integrations.storacha_memory import StorachaMemory
+    from ..integrations.lit_wallet import LitWallet
+    from ..tools.github_tool import GitHubTool
+    from ..tools.code_tool import CodeTool
+    from ..tools.web_tool import WebTool
+    from ..tools.blockchain_tool import BlockchainTool
+except ImportError:
+    from integrations.erc8004 import ERC8004Identity  # type: ignore
+    from integrations.filecoin_storage import FilecoinStorage  # type: ignore
+    from integrations.storacha_memory import StorachaMemory  # type: ignore
+    from integrations.lit_wallet import LitWallet  # type: ignore
+    from tools.github_tool import GitHubTool  # type: ignore
+    from tools.code_tool import CodeTool  # type: ignore
+    from tools.web_tool import WebTool  # type: ignore
+    from tools.blockchain_tool import BlockchainTool  # type: ignore
 
 
 def build_agent(spec: AgentSpec | None = None) -> AgentProof:

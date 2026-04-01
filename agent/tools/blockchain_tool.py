@@ -6,7 +6,10 @@ from typing import Any
 
 from web3 import Web3
 
-from ..core.config import config
+try:
+    from ..core.config import config
+except ImportError:
+    from core.config import config  # type: ignore
 
 
 class BlockchainTool:

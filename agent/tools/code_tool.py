@@ -36,9 +36,20 @@ class CodeTool:
                 filename = filename[len(prefix):]
         return filename
 
+    def _strip_json_tail(self, content: str) -> str:
+        """Remove JSON metadata the LLM sometimes appends after code content."""
+        # Common patterns: "},"expected_output":... or "},"status":...
+        import re
+        # If content ends with a JSON fragment like "},"key":"value"...}
+        # find the last clean line and truncate there
+        match = re.search(r'\n?"?\}\s*,\s*"(expected_output|status|result|output)"', content)
+        if match:
+            content = content[:match.start()]
+        return content.rstrip()
+
     async def write_file(self, params: dict) -> dict:
         filename = self._clean_filename(params.get("filename", "output.txt"))
-        content = params.get("content", "")
+        content = self._strip_json_tail(params.get("content", ""))
         filepath = self.WORKSPACE / filename
         filepath.parent.mkdir(parents=True, exist_ok=True)
         filepath.write_text(content)
