@@ -88,11 +88,27 @@ function getStateFromDisk() {
   };
 }
 
+const EMPTY_STATE = {
+  manifest: null,
+  logs: { total_entries: 0, chain_head_hash: "", recent_entries: [] },
+  filecoin: { items: [] },
+  memory: null,
+  workspace: { files: [] },
+  agentRegistry: null,
+  running: false,
+  timestamp: Date.now(),
+};
+
 export async function GET() {
   try {
     if (AGENT_API_URL) {
-      const data = await getStateFromAPI();
-      return NextResponse.json(data);
+      try {
+        const data = await getStateFromAPI();
+        return NextResponse.json(data);
+      } catch {
+        // Agent service unreachable — return empty state so dashboard loads
+        return NextResponse.json({ ...EMPTY_STATE, timestamp: Date.now() });
+      }
     }
     return NextResponse.json(getStateFromDisk());
   } catch (error) {
