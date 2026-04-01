@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from .agent import AgentProof
+from .agents import route_task, get_all_specs, AgentSpec
 from .config import config
 from .server import DashboardServer
 
@@ -19,8 +20,11 @@ from ..tools.web_tool import WebTool
 from ..tools.blockchain_tool import BlockchainTool
 
 
-def build_agent() -> AgentProof:
-    """Build a fully configured AgentProof instance with all integrations."""
+def build_agent(spec: AgentSpec | None = None) -> AgentProof:
+    """Build a fully configured AgentProof instance with all integrations.
+
+    If spec is provided, applies that agent's system prompt and restricts tools.
+    """
     agent = AgentProof()
 
     # --- Attach integrations ---
@@ -117,7 +121,25 @@ def build_agent() -> AgentProof:
 
     agent.register_tool("wallet", wallet_tool)
 
+    # Apply spec: override system prompt, restrict to allowed tools, set agent_id
+    if spec is not None:
+        agent.system_prompt = spec.system_prompt
+        agent.agent_id = spec.id
+        agent.identity.agent_name = spec.name
+        # Remove tools not in this agent's allowed list
+        disallowed = [t for t in list(agent._tools.keys()) if t not in spec.tools]
+        for t in disallowed:
+            del agent._tools[t]
+        agent.identity.supported_tools = [t for t in agent.identity.supported_tools if t in spec.tools]
+
     return agent
+
+
+def build_agent_for_task(task: str) -> tuple[AgentProof, "AgentSpec"]:
+    """Auto-select and build the right agent for a given task."""
+    spec = route_task(task)
+    agent = build_agent(spec=spec)
+    return agent, spec
 
 
 async def run_full(task: str | None = None, headless: bool = False):

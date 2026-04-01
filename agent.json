@@ -1,17 +1,11 @@
 {
-  "agent_name": "AgentProof-Alpha",
+  "agent_name": "CodeAgent",
   "operator_wallet": "0x49313E55937f569C5CAE9e2B37073A37c322E7Ca",
-  "erc8004_identity": "2",
-  "erc8004_registration_tx": "edcba5661b32dc46a26590a3e17944198d81bc83444b9440fb26944b3c498568",
+  "erc8004_identity": null,
+  "erc8004_registration_tx": null,
   "supported_tools": [
-    "github",
     "code",
-    "web",
-    "blockchain",
-    "filecoin",
-    "storacha",
-    "identity",
-    "wallet"
+    "filecoin"
   ],
   "supported_tech_stacks": [
     "python",
@@ -26,5 +20,6 @@
     "smart_contract_deployment",
     "data_analysis",
     "api_integration"
-  ]
+  ],
+  "agent_id": "code_agent"
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 
 // Types
 interface LogEntry {
@@ -14,6 +14,17 @@ interface LogEntry {
   parent_hash: string | null;
 }
 
+interface AgentSpec {
+  id: string;
+  name: string;
+  role: string;
+  description: string;
+  tools: string[];
+  color: string;
+  icon: string;
+  keywords: string[];
+}
+
 interface AgentData {
   manifest: {
     agent_name: string;
@@ -22,6 +33,7 @@ interface AgentData {
     supported_tools: string[];
     integrations?: Record<string, string>;
     safety_features?: string[];
+    agent_id?: string;
   } | null;
   logs: {
     total_entries: number;
@@ -30,7 +42,8 @@ interface AgentData {
   } | null;
   filecoin: { items: string[] };
   memory: { total_entries: number; categories: Record<string, number> } | null;
-  workspace?: { files: string[] };
+  workspace?: { files: Array<{ name: string; content: string; size: number }> };
+  agentRegistry?: AgentSpec[];
 }
 
 // ---- Helpers ----
@@ -94,6 +107,12 @@ function Tabs({ active, onChange }: { active: string; onChange: (t: string) => v
 }
 
 const ETHERSCAN_BASE = "https://sepolia.etherscan.io";
+const W3S_BASE = "https://w3s.link/ipfs";
+
+function extractCID(message: string): string | null {
+  const match = message.match(/CID=(baf[a-z0-9]+)/i);
+  return match ? match[1] : null;
+}
 
 // ---- Linkify TX hashes in messages ----
 function MessageWithLinks({ text }: { text: string }) {
@@ -187,6 +206,21 @@ function EventRow({ entry, isExpanded, onToggle }: { entry: LogEntry; isExpanded
           {toolName && (
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-900/40 text-cyan-300 font-mono">{toolName}</span>
           )}
+          {["filecoin", "storacha"].includes(entry.phase) && (() => {
+            const cid = extractCID(entry.message);
+            return cid ? (
+              <a
+                href={`${W3S_BASE}/${cid}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-[9px] px-1.5 py-0.5 rounded bg-teal-900/40 text-teal-300 font-mono hover:bg-teal-900/70 transition-colors"
+                title={`IPFS CID: ${cid}`}
+              >
+                ipfs ↗
+              </a>
+            ) : null;
+          })()}
           <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${phaseBadgeColor[entry.phase] ?? "bg-gray-800 text-gray-400"}`}>
             {entry.phase}
           </span>
@@ -235,6 +269,24 @@ function EventRow({ entry, isExpanded, onToggle }: { entry: LogEntry; isExpanded
               </div>
             )}
 
+            {/* Storacha / Filecoin CID links */}
+            {["filecoin", "storacha"].includes(entry.phase) && (() => {
+              const cid = extractCID(entry.message);
+              return cid ? (
+                <div className="mt-2">
+                  <a
+                    href={`${W3S_BASE}/${cid}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded bg-teal-900/30 text-teal-300 hover:bg-teal-900/50 transition-colors border border-teal-800/30"
+                  >
+                    View on IPFS: {cid.slice(0, 20)}...
+                  </a>
+                </div>
+              ) : null;
+            })()}
+
             {Object.keys(entry.data).length > 0 && (
               <>
                 <div className="text-gray-500 font-bold uppercase tracking-wider mt-3 mb-2">Data</div>
@@ -257,6 +309,10 @@ function SessionBlock({ logs, title, status }: { logs: LogEntry[]; title: string
   const llmCount = logs.filter(l => l.level === "decision").length;
   const toolCount = logs.filter(l => l.level === "tool_call").length;
 
+  // Extract final answer from log entries with phase="answer"
+  const answerEntry = logs.find(l => l.phase === "answer");
+  const answer = answerEntry?.message ?? null;
+
   return (
     <div className="border-b border-[#1a1a2e]">
       {/* Session header */}
@@ -275,6 +331,20 @@ function SessionBlock({ logs, title, status }: { logs: LogEntry[]; title: string
           {events} events · {duration(logs)} · {toolCount} tools · {llmCount} llm
         </span>
       </div>
+
+      {/* Final Answer — full-width prominent block */}
+      {answer && status === "completed" && (
+        <div className="border-b border-green-900/40" style={{ background: "linear-gradient(180deg, rgba(16,185,129,0.07) 0%, rgba(16,185,129,0.03) 100%)" }}>
+          <div className="flex items-center gap-2 px-5 pt-4 pb-2">
+            <span className="text-green-400 text-[11px] font-bold uppercase tracking-widest">Result</span>
+            <span className="flex-1 border-t border-green-900/30" />
+            <span className="text-[9px] text-green-700">{title}</span>
+          </div>
+          <div className="px-5 pb-5 overflow-x-auto">
+            <pre className="text-[13px] text-gray-100 leading-7 whitespace-pre-wrap font-mono" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{answer}</pre>
+          </div>
+        </div>
+      )}
 
       {/* Tools used */}
       {tools.length > 0 && (
@@ -350,32 +420,188 @@ function AlertsSidebar({ logs, data }: { logs: LogEntry[]; data: AgentData | nul
   );
 }
 
+// ---- Color maps for agent colors ----
+const agentBorderColor: Record<string, string> = {
+  indigo: "border-indigo-500/60",
+  cyan: "border-cyan-500/60",
+  purple: "border-purple-500/60",
+  green: "border-green-500/60",
+};
+const agentBgColor: Record<string, string> = {
+  indigo: "bg-indigo-900/20",
+  cyan: "bg-cyan-900/20",
+  purple: "bg-purple-900/20",
+  green: "bg-green-900/20",
+};
+const agentTextColor: Record<string, string> = {
+  indigo: "text-indigo-400",
+  cyan: "text-cyan-400",
+  purple: "text-purple-400",
+  green: "text-green-400",
+};
+const agentToolBadge: Record<string, string> = {
+  indigo: "bg-indigo-900/30 text-indigo-300",
+  cyan: "bg-cyan-900/30 text-cyan-300",
+  purple: "bg-purple-900/30 text-purple-300",
+  green: "bg-green-900/30 text-green-300",
+};
+
+const DEFAULT_REGISTRY: AgentSpec[] = [
+  { id: "code_agent", name: "CodeAgent", role: "Software Engineer", description: "Writes, executes, and debugs code. Saves artifacts to Filecoin.", tools: ["code", "filecoin"], color: "indigo", icon: "⌨", keywords: ["write", "code", "script", "function", "python"] },
+  { id: "research_agent", name: "ResearchAgent", role: "Research Analyst", description: "Searches the web, fetches URLs, summarizes content. Stores findings in Storacha.", tools: ["web", "storacha"], color: "cyan", icon: "🔍", keywords: ["search", "find", "research", "look up"] },
+  { id: "blockchain_agent", name: "BlockchainAgent", role: "Web3 Engineer", description: "Executes on-chain operations, reads contracts, manages identity and reputation.", tools: ["blockchain", "wallet", "identity"], color: "purple", icon: "⛓", keywords: ["blockchain", "contract", "wallet", "eth"] },
+  { id: "full_agent", name: "FullAgent", role: "Autonomous Orchestrator", description: "All tools available. Handles complex multi-step tasks requiring code, research, and blockchain ops.", tools: ["code", "web", "blockchain", "wallet", "identity", "filecoin", "storacha", "github"], color: "green", icon: "🤖", keywords: [] },
+];
+
 // ---- Agent Tab ----
 function AgentTab({ data }: { data: AgentData | null }) {
   const m = data?.manifest;
-  if (!m) return <div className="p-8 text-gray-600 text-sm">No agent data available. Run a task first.</div>;
+  const registry: AgentSpec[] = data?.agentRegistry ?? DEFAULT_REGISTRY;
+  const activeAgentId = m?.agent_id ?? null;
+
   return (
-    <div className="p-6 max-w-2xl space-y-4">
-      <div className="bg-[#0d0d14] border border-[#1a1a2e] rounded p-4 font-mono text-[11px] space-y-2">
-        <div className="text-gray-500 font-bold uppercase tracking-wider mb-2">Agent Identity</div>
-        <div><span className="text-gray-600 w-20 inline-block">Name</span> <span className="text-white">{m.agent_name}</span></div>
-        <div><span className="text-gray-600 w-20 inline-block">Operator</span> <span className="text-cyan-400">{m.operator_wallet || "—"}</span></div>
-        <div><span className="text-gray-600 w-20 inline-block">ERC-8004</span> <span className="text-indigo-400">Token #{m.erc8004_identity ?? "—"}</span></div>
-        <div className="text-gray-500 font-bold uppercase tracking-wider mt-4 mb-2">Tools ({m.supported_tools.length})</div>
-        <div className="flex flex-wrap gap-1">
-          {m.supported_tools.map(t => (
-            <span key={t} className="px-2 py-0.5 bg-indigo-900/30 text-indigo-300 rounded text-[9px]">{t}</span>
+    <div className="p-6 space-y-4 max-w-4xl">
+      {/* Active identity panel */}
+      {m && (
+        <div className="bg-[#0d0d14] border border-[#1a1a2e] rounded p-4 font-mono text-[11px] space-y-2 mb-2">
+          <div className="text-gray-500 font-bold uppercase tracking-wider mb-2">Active Identity</div>
+          <div><span className="text-gray-600 w-24 inline-block">Name</span> <span className="text-white">{m.agent_name}</span></div>
+          <div><span className="text-gray-600 w-24 inline-block">Operator</span> <span className="text-cyan-400">{m.operator_wallet || "—"}</span></div>
+          <div><span className="text-gray-600 w-24 inline-block">ERC-8004</span> <span className="text-indigo-400">Token #{m.erc8004_identity ?? "—"}</span></div>
+          {m.integrations && Object.entries(m.integrations).map(([k, v]) => (
+            <div key={k}><span className="text-green-400">{k}</span> <span className="text-gray-500 ml-2">— {v}</span></div>
           ))}
         </div>
-        {m.integrations && (
-          <>
-            <div className="text-gray-500 font-bold uppercase tracking-wider mt-4 mb-2">Integrations</div>
-            {Object.entries(m.integrations).map(([k, v]) => (
-              <div key={k}><span className="text-green-400">{k}</span> <span className="text-gray-500">— {v}</span></div>
-            ))}
-          </>
+      )}
+
+      {/* Agent registry grid */}
+      <div className="text-gray-500 font-mono text-[10px] font-bold uppercase tracking-wider mb-3">Agent Registry — {registry.length} agents</div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {registry.map((spec) => {
+          const isActive = spec.id === activeAgentId;
+          return (
+            <div
+              key={spec.id}
+              className={`rounded border p-4 font-mono text-[11px] transition-all ${agentBgColor[spec.color] ?? "bg-gray-900/20"} ${agentBorderColor[spec.color] ?? "border-gray-700"} ${isActive ? "ring-1 ring-offset-0 ring-offset-transparent" : "opacity-80"}`}
+              style={isActive ? { boxShadow: "0 0 12px rgba(99,102,241,0.2)" } : {}}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-lg">{spec.icon}</span>
+                <span className={`font-bold text-[13px] ${agentTextColor[spec.color] ?? "text-gray-300"}`}>{spec.name}</span>
+                {isActive && (
+                  <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded bg-green-900/40 text-green-400 animate-pulse-glow">● ACTIVE</span>
+                )}
+              </div>
+              <div className={`text-[10px] mb-1 ${agentTextColor[spec.color] ?? "text-gray-500"} opacity-70`}>{spec.role}</div>
+              <div className="text-gray-500 text-[10px] mb-3 leading-relaxed">{spec.description}</div>
+              <div className="flex flex-wrap gap-1">
+                {spec.tools.map(t => (
+                  <span key={t} className={`px-1.5 py-0.5 rounded text-[9px] ${agentToolBadge[spec.color] ?? "bg-gray-800 text-gray-400"}`}>{t}</span>
+                ))}
+              </div>
+              {spec.keywords.length > 0 && (
+                <div className="mt-2 text-[9px] text-gray-600">
+                  triggers: {spec.keywords.slice(0, 5).join(", ")}{spec.keywords.length > 5 ? "…" : ""}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {!m && (
+        <div className="text-gray-600 text-[11px] font-mono mt-4">Run a task to see which agent gets selected.</div>
+      )}
+    </div>
+  );
+}
+
+// ---- File Runner (Pyodide in-browser Python) ----
+function FileCard({ file }: { file: { name: string; content: string; size: number } }) {
+  const isPython = file.name.endsWith(".py");
+  const [output, setOutput] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pyodideReady, setPyodideReady] = useState(false);
+  const pyodideRef = useRef<any>(null);
+
+  // Detect if file uses terminal/GUI libs that can't run in browser
+  const hasTerminalLib = /\b(curses|pygame|tkinter|wx|gi\.repository|cv2)\b/.test(file.content);
+
+  const loadPyodide = async () => {
+    if (pyodideRef.current) return pyodideRef.current;
+    // Dynamically load Pyodide from CDN
+    await new Promise<void>((resolve, reject) => {
+      if ((window as any).loadPyodide) { resolve(); return; }
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js";
+      script.onload = () => resolve();
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+    const py = await (window as any).loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/" });
+    pyodideRef.current = py;
+    setPyodideReady(true);
+    return py;
+  };
+
+  const runCode = async () => {
+    if (hasTerminalLib) return;
+    setRunning(true);
+    setOutput(null);
+    setError(null);
+    try {
+      const py = await loadPyodide();
+      // Capture stdout
+      let captured = "";
+      py.setStdout({ batched: (s: string) => { captured += s + "\n"; } });
+      py.setStderr({ batched: (s: string) => { captured += "[stderr] " + s + "\n"; } });
+      await py.runPythonAsync(file.content);
+      setOutput(captured || "(no output)");
+    } catch (e: any) {
+      setError(String(e));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="mb-4 rounded border border-[#1a1a2e] bg-[#0d0d14] overflow-hidden">
+      {/* File header */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[#1a1a2e] bg-[#0a0a0f]">
+        <span className="text-cyan-400 text-[11px] font-mono font-medium">📄 {file.name}</span>
+        <span className="text-gray-600 text-[9px]">{file.size} bytes</span>
+        <div className="flex-1" />
+        {isPython && !hasTerminalLib && (
+          <button
+            onClick={runCode}
+            disabled={running}
+            className="flex items-center gap-1 text-[10px] px-3 py-1 rounded bg-green-900/40 text-green-400 hover:bg-green-900/70 border border-green-800/40 transition-colors disabled:opacity-50 font-mono"
+          >
+            {running ? "⏳ Running..." : "▶ Run"}
+          </button>
+        )}
+        {isPython && hasTerminalLib && (
+          <span className="text-[9px] text-gray-600 font-mono px-2 py-1 rounded bg-gray-900/40 border border-gray-800/30">
+            uses {file.content.match(/\b(curses|pygame|tkinter)\b/)?.[1]} — terminal only
+          </span>
         )}
       </div>
+
+      {/* Code */}
+      <pre className="p-3 text-[10px] text-gray-300 overflow-x-auto max-h-56 font-mono leading-5">{file.content}</pre>
+
+      {/* Output panel */}
+      {(output !== null || error !== null) && (
+        <div className="border-t border-[#1a1a2e]">
+          <div className="px-3 py-1 text-[9px] text-gray-600 uppercase tracking-wider bg-[#0a0a0f] border-b border-[#1a1a2e]">
+            Output
+          </div>
+          <pre className={`p-3 text-[11px] font-mono whitespace-pre-wrap max-h-64 overflow-y-auto ${error ? "text-red-400" : "text-green-300"}`}>
+            {error ?? output}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }
@@ -405,7 +631,7 @@ function StorageTab({ data }: { data: AgentData | null }) {
         <div className="text-gray-500 font-bold uppercase tracking-wider mt-4 mb-2">Workspace Files</div>
         {(data?.workspace?.files ?? []).length > 0 ? (
           data!.workspace!.files.map((f, i) => (
-            <div key={i} className="text-gray-400">📄 {f}</div>
+            <FileCard key={i} file={f} />
           ))
         ) : <div className="text-gray-600">No files</div>}
       </div>

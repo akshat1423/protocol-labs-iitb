@@ -1,0 +1,109 @@
+[
+  {
+    "id": "code_agent",
+    "name": "CodeAgent",
+    "role": "Software Engineer",
+    "description": "Writes, executes, and debugs code. Saves artifacts to Filecoin.",
+    "tools": [
+      "code",
+      "filecoin"
+    ],
+    "color": "indigo",
+    "icon": "\u2328",
+    "keywords": [
+      "write",
+      "code",
+      "script",
+      "function",
+      "program",
+      "python",
+      "javascript",
+      "debug",
+      "fix",
+      "implement",
+      "build",
+      "generate",
+      "file",
+      "save",
+      "run"
+    ]
+  },
+  {
+    "id": "research_agent",
+    "name": "ResearchAgent",
+    "role": "Research Analyst",
+    "description": "Searches the web, fetches URLs, summarizes content. Stores findings in Storacha.",
+    "tools": [
+      "web",
+      "storacha"
+    ],
+    "color": "cyan",
+    "icon": "\ud83d\udd0d",
+    "keywords": [
+      "search",
+      "find",
+      "research",
+      "look up",
+      "what is",
+      "who is",
+      "explain",
+      "summarize",
+      "fetch",
+      "url",
+      "website",
+      "news",
+      "latest",
+      "current",
+      "learn"
+    ]
+  },
+  {
+    "id": "blockchain_agent",
+    "name": "BlockchainAgent",
+    "role": "Web3 Engineer",
+    "description": "Executes on-chain operations, reads contracts, manages identity and reputation.",
+    "tools": [
+      "blockchain",
+      "wallet",
+      "identity"
+    ],
+    "color": "purple",
+    "icon": "\u26d3",
+    "keywords": [
+      "blockchain",
+      "contract",
+      "transaction",
+      "wallet",
+      "eth",
+      "token",
+      "onchain",
+      "deploy",
+      "sign",
+      "balance",
+      "address",
+      "erc",
+      "reputation",
+      "trust",
+      "sepolia"
+    ]
+  },
+  {
+    "id": "full_agent",
+    "name": "FullAgent",
+    "role": "Autonomous Orchestrator",
+    "description": "All tools available. Handles complex multi-step tasks requiring code, research, and blockchain ops.",
+    "tools": [
+      "code",
+      "web",
+      "blockchain",
+      "wallet",
+      "identity",
+      "filecoin",
+      "storacha",
+      "github"
+    ],
+    "color": "green",
+    "icon": "\ud83e\udd16",
+    "keywords": []
+  }
+]

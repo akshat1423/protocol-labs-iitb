@@ -22,7 +22,7 @@ load_dotenv()
 
 
 async def run(task: str | None = None):
-    from .runner import build_agent
+    from .runner import build_agent, build_agent_for_task
     from .config import config
 
     # Verify API key
@@ -49,10 +49,21 @@ async def run(task: str | None = None):
     ╚═══════════════════════════════════════════════════════╝
     """)
 
-    agent = build_agent()
+    import json as _json
+    from pathlib import Path as _Path
+    from .agents import route_task, get_all_specs
+    from .runner import build_agent_for_task
+
+    # Write agent registry for dashboard
+    _Path("agent_registry.json").write_text(_json.dumps(get_all_specs(), indent=2))
+
+    task_str = task or default_task
+    selected_spec = route_task(task_str)
+    print(f"  Routing to: {selected_spec.icon} {selected_spec.name} ({selected_spec.role})\n")
+    agent, _ = build_agent_for_task(task_str)
 
     # Quick LLM test
-    print("Testing Gemini connection...")
+    print("Testing connection...")
     test_response = agent.llm.complete_sync(
         "You are a helpful assistant.",
         "Respond with exactly: {\"status\": \"ok\"}",

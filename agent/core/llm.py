@@ -69,7 +69,7 @@ class LLMClient:
                 last_error = e
                 if attempt < max_retries:
                     import time
-                    time.sleep(1)
+                    time.sleep(5)  # Longer delay for free tier rate limits
                     continue
 
         self.budget.record_llm_call(0.001)
@@ -84,9 +84,10 @@ class LLMClient:
                 {"role": "user", "content": user_message},
             ],
             temperature=temperature,
-            max_tokens=4096,
+            max_tokens=2048,
         )
-        return response.choices[0].message.content or ""
+        msg = response.choices[0].message
+        return msg.content or getattr(msg, 'reasoning', None) or ""
 
     def _gemini_complete(self, client, system_prompt: str, user_message: str, temperature: float) -> str:
         """Call Google Gemini API."""

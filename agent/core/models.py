@@ -72,6 +72,7 @@ class Task:
     created_at: float = field(default_factory=time.time)
     completed_at: float | None = None
     error: str | None = None
+    final_answer: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -85,6 +86,7 @@ class Task:
             "created_at": self.created_at,
             "completed_at": self.completed_at,
             "error": self.error,
+            "final_answer": self.final_answer,
         }
 
 

@@ -75,26 +75,49 @@ class FilecoinStorage:
         return await self.store("agent_state", state)
 
     async def _pin_to_filecoin(self, key: str, content: str) -> dict[str, str]:
-        """Pin content to Filecoin via Synapse SDK / HTTP API.
+        """Pin content to Filecoin via Storacha (w3 CLI).
 
-        This is a placeholder for the actual Synapse SDK integration.
-        In production, use the Synapse Python SDK directly.
+        Storacha stores data on Filecoin under the hood — real CIDs, real storage.
         """
-        # TODO: Replace with actual Synapse SDK calls once configured
-        # For now, simulate the pinning operation
-        import hashlib
-        cid = "bafy" + hashlib.sha256(content.encode()).hexdigest()[:52]
+        import asyncio
+        import os
+        import tempfile
 
-        # Store locally with CID reference
-        self._store_local(key, content, cid=cid)
+        with tempfile.NamedTemporaryFile(mode="w", suffix=f"_{key}.json", delete=False) as f:
+            f.write(content)
+            tmp_path = f.name
 
-        return {
-            "cid": cid,
-            "key": key,
-            "size_bytes": len(content.encode()),
-            "network": "filecoin-calibration",
-            "status": "pinned",
-        }
+        try:
+            env = {k: v for k, v in os.environ.items() if k != "W3_PRINCIPAL"}
+            proc = await asyncio.create_subprocess_exec(
+                "w3", "up", "--no-wrap", tmp_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+            output = stdout.decode() + stderr.decode()
+
+            cid = None
+            for line in output.splitlines():
+                if "ipfs/" in line:
+                    cid = line.strip().split("ipfs/")[-1].strip()
+                    break
+
+            if not cid:
+                raise RuntimeError(f"No CID in output: {output[:200]}")
+
+            self._store_local(key, content, cid=cid)
+            return {
+                "cid": cid,
+                "key": key,
+                "size_bytes": len(content.encode()),
+                "network": "filecoin-via-storacha",
+                "gateway": f"https://w3s.link/ipfs/{cid}",
+                "status": "pinned",
+            }
+        finally:
+            os.unlink(tmp_path)
 
     async def _retrieve_from_filecoin(self, key: str) -> dict[str, Any] | None:
         """Retrieve content from Filecoin by key."""

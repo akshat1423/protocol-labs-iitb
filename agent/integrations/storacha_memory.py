@@ -124,19 +124,45 @@ class StorachaMemory:
             pass
 
     async def _upload_to_storacha(self, content: str):
-        """Upload memory blob to Storacha.
+        """Upload memory blob to Storacha via w3 CLI."""
+        import asyncio
+        import tempfile
+        import os
 
-        TODO: Integrate with actual Storacha SDK.
-        Uses w3up client or HTTP API.
-        """
-        # Placeholder for actual Storacha upload
-        import hashlib
-        cid = "bafk" + hashlib.sha256(content.encode()).hexdigest()[:52]
-        self.logger.info("storacha", f"Memory synced: CID={cid}")
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(content)
+            tmp_path = f.name
+
+        try:
+            env = {k: v for k, v in os.environ.items() if k != "W3_PRINCIPAL"}
+            proc = await asyncio.create_subprocess_exec(
+                "w3", "up", "--no-wrap", tmp_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+            output = stdout.decode() + stderr.decode()
+
+            # Parse CID from output like: ⁂ https://w3s.link/ipfs/bafy...
+            cid = None
+            for line in output.splitlines():
+                if "ipfs/" in line:
+                    cid = line.strip().split("ipfs/")[-1].strip()
+                    break
+
+            if cid:
+                self.logger.info("storacha", f"Memory synced: CID={cid}")
+            else:
+                self.logger.info("storacha", f"Upload output: {output[:200]}")
+        except Exception as e:
+            self.logger.info("storacha", f"Upload failed: {e}")
+        finally:
+            os.unlink(tmp_path)
 
     async def _retrieve_all(self) -> dict[str, Any] | None:
         """Retrieve all memories from Storacha."""
-        # TODO: Implement actual Storacha retrieval
+        # Local cache is source of truth; Storacha is write-only backup
         return None
 
     def _load_local(self):

@@ -46,11 +46,26 @@ export async function GET() {
       memory = { total_entries: Object.keys(raw).length, categories };
     }
 
-    // Read workspace files
+    // Read workspace files with content
     const workspaceDir = join(AGENT_ROOT, "agent_workspace");
-    let workspaceFiles: string[] = [];
+    let workspaceFiles: Array<{ name: string; content: string; size: number }> = [];
     if (existsSync(workspaceDir)) {
-      workspaceFiles = readdirSync(workspaceDir).filter(f => !f.startsWith('.'));
+      const names = readdirSync(workspaceDir).filter(f => !f.startsWith('.'));
+      workspaceFiles = names.map(name => {
+        try {
+          const content = readFileSync(join(workspaceDir, name), "utf-8");
+          return { name, content: content.slice(0, 5000), size: content.length };
+        } catch {
+          return { name, content: "", size: 0 };
+        }
+      });
+    }
+
+    // Read agent registry (written by Python on each run)
+    const registryPath = join(AGENT_ROOT, "agent_registry.json");
+    let agentRegistry = null;
+    if (existsSync(registryPath)) {
+      agentRegistry = JSON.parse(readFileSync(registryPath, "utf-8"));
     }
 
     return NextResponse.json({
@@ -59,6 +74,7 @@ export async function GET() {
       filecoin: { items: filecoinItems },
       memory,
       workspace: { files: workspaceFiles },
+      agentRegistry,
       timestamp: Date.now(),
     });
   } catch (error) {
